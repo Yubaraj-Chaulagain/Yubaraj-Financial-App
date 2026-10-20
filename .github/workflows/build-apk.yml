@@ -1,0 +1,71 @@
+name: Build Yubaraj Finance & Stock APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # 3. Setup Java
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # 4. Install project dependencies
+      - name: Install Dependencies
+        run: npm install
+
+      # 5. Verify required files
+      - name: Check Project Files
+        run: |
+          test -f www/index.html
+          test -f www/manifest.json
+          test -f www/service-worker.js
+          test -f capacitor.config.json
+          echo "Project files verified."
+
+      # 6. Setup Android Platform
+      - name: Setup Android Platform
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      # 7. Build Debug APK
+      - name: Build Debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      # 8. Upload APK Artifact
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yubaraj-Finance-Stock-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
