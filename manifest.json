@@ -1,0 +1,17 @@
+{
+  "name": "Yubaraj Finance & Stock",
+  "short_name": "YFS Finance",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f7fc",
+  "theme_color": "#0647a8",
+  "description": "Offline member finance, stock and loan management",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

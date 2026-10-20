@@ -1,0 +1,16 @@
+{
+  "name": "yubaraj-finance-stock",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Yubaraj Finance & Stock PWA and Android APK",
+  "scripts": {
+    "copy:web": "echo web files already in www"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}
