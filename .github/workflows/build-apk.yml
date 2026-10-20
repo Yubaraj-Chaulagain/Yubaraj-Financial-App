@@ -1,4 +1,4 @@
-name: Build and Publish Release APK
+name: Build Yubaraj Finance & Stock APK
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Android Release APK
+    name: Build and Publish APK
     runs-on: ubuntu-22.04
 
     steps:
@@ -33,36 +33,50 @@ jobs:
         run: |
           test -f package.json
           test -f capacitor.config.json
-          test -f www/index.html
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Setup Android
+      - name: Prepare Web Files
+        run: |
+          if [ ! -d www ]; then
+            mkdir -p www
+            if [ -f index.html ]; then
+              cp index.html www/index.html
+            else
+              echo "ERROR: index.html not found"
+              exit 1
+            fi
+          fi
+          test -f www/index.html
+
+      - name: Setup Android Platform
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
           npx cap sync android
 
-      - name: Build Release APK
+      - name: Build Signed APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
 
-      - name: Prepare APK
+      - name: Verify APK
         run: |
-          APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
 
-          if [ ! -f "$APK" ]; then
-            APK="android/app/build/outputs/apk/release/app-release.apk"
-          fi
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          APKSIGNER="$(find "$SDK/build-tools" \
+            -name apksigner | sort -V | tail -1)"
 
-          test -f "$APK"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify "$APK"
 
           mkdir -p release-files
-          cp "$APK" release-files/Yubaraj-Finance-Stock-Release.apk
+          cp "$APK" release-files/Yubaraj-Finance-Stock.apk
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -70,9 +84,9 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: Yubaraj Finance & Stock v1.0.${{ github.run_number }}
           body: |
-            Yubaraj Finance & Stock Android APK
+            Yubaraj Finance & Stock Android APK.
 
-            Download the APK below and install it on your Android phone.
-          draft: false
-          prerelease: false
-          files: release-files/Yubaraj-Finance-Stock-Release.apk
+            Download Yubaraj-Finance-Stock.apk below.
+          files: release-files/Yubaraj-Finance-Stock.apk
+          fail_on_unmatched_files: true
+          make_latest: true
