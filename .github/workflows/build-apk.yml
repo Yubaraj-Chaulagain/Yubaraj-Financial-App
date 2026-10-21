@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Download repository
+      # 1. Checkout repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '20'
 
-      # 3. Check required files
+      # 3. Check project files
       - name: Check Project Files
         run: |
           echo "Checking project files..."
@@ -35,54 +35,58 @@ jobs:
             exit 1
           }
 
-      # 4. Install Dependencies
+      # 4. Install dependencies
       - name: Install Dependencies
         run: npm install
 
       # 5. Add Android platform if missing
       - name: Add Android Platform If Missing
         run: |
-          if [ ! -d android ] || [ ! -f android/gradlew ]; then
+          if [ ! -f android/gradlew ]; then
             npx cap add android
           else
             echo "Android platform already exists."
           fi
 
-      # 6. Setup Java
+      # 6. Setup Java 21
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
           cache: gradle
 
-      # 7. Sync Capacitor
+      # 7. Verify Java version
+      - name: Verify Java
+        run: java -version
+
+      # 8. Sync Capacitor
       - name: Sync Capacitor
         run: npx cap sync android
 
-      # 8. Grant Gradle permission
+      # 9. Grant Gradle permission
       - name: Grant Gradle Permission
         run: chmod +x android/gradlew
 
-      # 9. Build APK
+      # 10. Build Android APK
       - name: Build Debug APK
         working-directory: android
         run: ./gradlew assembleDebug
 
-      # 10. Prepare APK for release
+      # 11. Prepare APK
       - name: Prepare APK
         run: |
           mkdir -p release
           cp android/app/build/outputs/apk/debug/app-debug.apk \
             release/Yubaraj-Finance-Stock.apk
 
-      # 11. Generate unique release tag
+      # 12. Generate release tag
       - name: Generate Release Tag
         id: release
         run: |
           echo "tag=finance-stock-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      # 12. Publish APK to GitHub Releases
+      # 13. Publish APK to GitHub Releases
       - name: Publish APK Release
         uses: softprops/action-gh-release@v2
         with:
