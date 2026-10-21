@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Yubaraj Finance Stock APK
 
 on:
   workflow_dispatch:
@@ -11,46 +11,86 @@ permissions:
 
 jobs:
   build:
-    name: Build Yubaraj Finance Stock APK
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Download repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # 3. Check required files
+      - name: Check Project Files
+        run: |
+          echo "Checking project files..."
+          ls -la
+          test -f package.json || {
+            echo "ERROR: package.json not found"
+            exit 1
+          }
+
+      # 4. Install Dependencies
       - name: Install Dependencies
         run: npm install
 
-      - name: Setup Java
+      # 5. Add Android platform if missing
+      - name: Add Android Platform If Missing
+        run: |
+          if [ ! -d android ] || [ ! -f android/gradlew ]; then
+            npx cap add android
+          else
+            echo "Android platform already exists."
+          fi
+
+      # 6. Setup Java
+      - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
+      # 7. Sync Capacitor
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Build APK
-        run: |
-          chmod +x android/gradlew
-          cd android
-          ./gradlew assembleDebug
+      # 8. Grant Gradle permission
+      - name: Grant Gradle Permission
+        run: chmod +x android/gradlew
 
+      # 9. Build APK
+      - name: Build Debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      # 10. Prepare APK for release
       - name: Prepare APK
         run: |
           mkdir -p release
-          cp android/app/build/outputs/apk/debug/app-debug.apk release/Yubaraj-Finance-Stock.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+            release/Yubaraj-Finance-Stock.apk
 
+      # 11. Generate unique release tag
+      - name: Generate Release Tag
+        id: release
+        run: |
+          echo "tag=finance-stock-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      # 12. Publish APK to GitHub Releases
       - name: Publish APK Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: finance-stock-${{ github.run_number }}
-          name: Yubaraj Finance Stock Build ${{ github.run_number }}
-          body: Yubaraj Finance and Stock Android APK
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: Yubaraj Finance & Stock Build ${{ github.run_number }}
+          body: |
+            Yubaraj Finance & Stock Android Application.
+
+            Download the APK below and install it on your Android phone.
           files: release/Yubaraj-Finance-Stock.apk
           make_latest: true
