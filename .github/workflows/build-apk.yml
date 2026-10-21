@@ -1,25 +1,17 @@
-name: Build Yubaraj Finance & Stock APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-    paths:
-      - 'www/**'
-      - 'android/**'
-      - 'resources/**'
-      - 'capacitor.config.*'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Yubaraj Finance Stock APK
     runs-on: ubuntu-latest
 
     steps:
@@ -30,66 +22,35 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Sync Capacitor Android
-        run: npx cap sync android
-
-      - name: Setup Java JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
-      - name: Grant Gradle Permission
-        run: chmod +x android/gradlew
+      - name: Sync Capacitor
+        run: npx cap sync android
 
-      - name: Build Debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug
+      - name: Build APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug
 
-      - name: Rename APK
+      - name: Prepare APK
         run: |
           mkdir -p release
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release/Yubaraj-Finance-Stock.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/Yubaraj-Finance-Stock.apk
 
-      - name: Create Release Tag
-        id: tag
-        run: |
-          echo "tag=v$(date -u +'%Y.%m.%d-%H%M%S')" >> "$GITHUB_OUTPUT"
-
-      - name: Publish APK to GitHub Releases
+      - name: Publish APK Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Yubaraj Finance & Stock ${{ steps.tag.outputs.tag }}
-          body: |
-            Yubaraj Finance & Stock Android Application
-
-            APK: Debug build
+          tag_name: finance-stock-${{ github.run_number }}
+          name: Yubaraj Finance Stock Build ${{ github.run_number }}
+          body: Yubaraj Finance and Stock Android APK
           files: release/Yubaraj-Finance-Stock.apk
           make_latest: true
-
-### 📱 GitHub मा राख्ने तरिका
-
-1. आफ्नो GitHub Repository खोल्नुहोस्।
-2. `.github/workflows/build-apk.yml` फाइल खोल्नुहोस्।
-3. पेन्सिल ✏️ थिचेर Edit गर्नुहोस्।
-4. पुरानो कोड हटाएर माथिको कोड राख्नुहोस्।
-5. **Commit changes** थिच्नुहोस्।
-6. GitHub को **Actions** मा गएर Build सफल भयो कि भएन हेर्नुहोस्।
-7. सफल भएपछि **Releases** खोल्नुहोस् र `Yubaraj-Finance-Stock.apk` डाउनलोड गर्नुहोस्।
-
-### ⚠️ ध्यान दिनुहोस्
-
-- यो कोडले Debug APK बनाउँछ; Release APK जस्तो हस्ताक्षरित वितरण प्याकेज होइन।
-- तपाईंको Repository मा `package.json`, `android/gradlew` र Capacitor Android परियोजना हुनुपर्छ।
-- `npm install` असफल भएमा `package-lock.json` र Dependencies जाँच गर्नुपर्छ।
-- यो Workflow ले Release बनाउन GitHub लाई अनुमति दिन्छ। Repository को Settings मा Actions का लागि आवश्यक Write permissions उपलब्ध हुनुपर्छ।
-
-**महत्त्वपूर्ण:** तपाईंको एपको फोटो र ImgBB सुविधा `www/index.html` मा सही रूपमा राखिएको हुनुपर्छ। यो Workflow ले आफैँ फोटोसम्बन्धी समस्या समाधान गर्दैन; त्यसले भएका कोडलाई APK मा Build गर्छ।
