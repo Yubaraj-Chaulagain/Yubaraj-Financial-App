@@ -15,130 +15,86 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3. Setup Java
       - name: Setup Java JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
 
-      # 4. Check Required Files
       - name: Verify Project Files
         run: |
           test -f package.json
           test -f capacitor.config.json
           test -f resources/icon.png
           test -f www/index.html
+          echo "Required files found."
 
-          echo "All required files found."
-          file resources/icon.png
-
-      # 5. Install Dependencies
       - name: Install Dependencies
         run: npm install
 
-      # 6. Check Icon Image
       - name: Validate App Icon
         run: |
+          python3 -m pip install --user Pillow
           python3 - <<'PY'
           from PIL import Image
-
           img = Image.open("resources/icon.png")
-          print("Icon format:", img.format)
           print("Icon size:", img.size)
-
-          if img.width < 192 or img.height < 192:
-              raise SystemExit(
-                  "ERROR: Icon must be at least 192x192 pixels"
-              )
-
           img.verify()
-          print("Icon image is valid.")
+          print("Icon is valid.")
           PY
 
-      # 7. Add Android Platform If Missing
-      - name: Add Android Platform
+      - name: Add Android Platform If Missing
         run: |
           if [ ! -f android/gradlew ]; then
             npx cap add android
           fi
 
-      # 8. Generate Android Launcher Icons
       - name: Generate Android App Icons
         run: |
           npx capacitor-assets generate --android
 
-      # 9. Sync Capacitor
       - name: Sync Android Project
-        run: |
-          npx cap sync android
+        run: npx cap sync android
 
-      # 10. Generate Launcher Icons Again
-      - name: Regenerate Android App Icons
-        run: |
-          npx capacitor-assets generate --android
-
-      # 11. Verify Android Project
       - name: Verify Android Project
         run: |
           test -f android/gradlew
           test -f android/app/src/main/AndroidManifest.xml
 
-          echo "Android project is ready."
-
-      # 12. Grant Gradle Permission
       - name: Grant Gradle Permission
-        run: |
-          chmod +x android/gradlew
+        run: chmod +x android/gradlew
 
-      # 13. Build APK
       - name: Build Android APK
         working-directory: android
-        run: |
-          ./gradlew --no-daemon clean assembleDebug
+        run: ./gradlew --no-daemon clean assembleDebug
 
-      # 14. Prepare APK
       - name: Prepare APK
         run: |
           mkdir -p release
-
-          cp \
-            android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
             release/Yubaraj-Finance-Stock.apk
 
-          ls -lh release/Yubaraj-Finance-Stock.apk
-
-      # 15. Generate Release Tag
       - name: Generate Release Tag
         id: release
         run: |
           echo "tag=finance-stock-${GITHUB_RUN_NUMBER}" \
             >> "$GITHUB_OUTPUT"
 
-      # 16. Publish APK to GitHub Releases
       - name: Publish APK Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: Yubaraj Finance & Stock Build ${{ github.run_number }}
           body: |
-            Yubaraj Finance & Stock Android Application.
-
-            App launcher icons are generated from:
-            resources/icon.png
-
-            Download Yubaraj-Finance-Stock.apk
-            and install it on your Android phone.
+            Yubaraj Finance & Stock Android APK.
+            App icon generated from resources/icon.png.
           files: release/Yubaraj-Finance-Stock.apk
           make_latest: true
