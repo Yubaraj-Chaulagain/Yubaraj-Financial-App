@@ -5,14 +5,22 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'www/**'
+      - 'android/**'
+      - 'resources/**'
+      - 'capacitor.config.*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build and Publish APK
-    runs-on: ubuntu-22.04
+    name: Build Android APK
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
@@ -21,72 +29,67 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Check Project Files
-        run: |
-          test -f package.json
-          test -f capacitor.config.json
+          node-version: '20'
+          cache: npm
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Prepare Web Files
-        run: |
-          if [ ! -d www ]; then
-            mkdir -p www
-            if [ -f index.html ]; then
-              cp index.html www/index.html
-            else
-              echo "ERROR: index.html not found"
-              exit 1
-            fi
-          fi
-          test -f www/index.html
+      - name: Sync Capacitor Android
+        run: npx cap sync android
 
-      - name: Setup Android Platform
-        run: |
-          if [ ! -d android ]; then
-            npx cap add android
-          fi
-          npx cap sync android
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
-      - name: Build Signed APK
+      - name: Grant Gradle Permission
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
         working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Rename APK
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+            release/Yubaraj-Finance-Stock.apk
 
-      - name: Verify APK
+      - name: Create Release Tag
+        id: tag
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
+          echo "tag=v$(date -u +'%Y.%m.%d-%H%M%S')" >> "$GITHUB_OUTPUT"
 
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          APKSIGNER="$(find "$SDK/build-tools" \
-            -name apksigner | sort -V | tail -1)"
-
-          test -n "$APKSIGNER"
-          "$APKSIGNER" verify "$APK"
-
-          mkdir -p release-files
-          cp "$APK" release-files/Yubaraj-Finance-Stock.apk
-
-      - name: Publish GitHub Release
+      - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Yubaraj Finance & Stock v1.0.${{ github.run_number }}
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Yubaraj Finance & Stock ${{ steps.tag.outputs.tag }}
           body: |
-            Yubaraj Finance & Stock Android APK.
+            Yubaraj Finance & Stock Android Application
 
-            Download Yubaraj-Finance-Stock.apk below.
-          files: release-files/Yubaraj-Finance-Stock.apk
-          fail_on_unmatched_files: true
+            APK: Debug build
+          files: release/Yubaraj-Finance-Stock.apk
           make_latest: true
+
+### 📱 GitHub मा राख्ने तरिका
+
+1. आफ्नो GitHub Repository खोल्नुहोस्।
+2. `.github/workflows/build-apk.yml` फाइल खोल्नुहोस्।
+3. पेन्सिल ✏️ थिचेर Edit गर्नुहोस्।
+4. पुरानो कोड हटाएर माथिको कोड राख्नुहोस्।
+5. **Commit changes** थिच्नुहोस्।
+6. GitHub को **Actions** मा गएर Build सफल भयो कि भएन हेर्नुहोस्।
+7. सफल भएपछि **Releases** खोल्नुहोस् र `Yubaraj-Finance-Stock.apk` डाउनलोड गर्नुहोस्।
+
+### ⚠️ ध्यान दिनुहोस्
+
+- यो कोडले Debug APK बनाउँछ; Release APK जस्तो हस्ताक्षरित वितरण प्याकेज होइन।
+- तपाईंको Repository मा `package.json`, `android/gradlew` र Capacitor Android परियोजना हुनुपर्छ।
+- `npm install` असफल भएमा `package-lock.json` र Dependencies जाँच गर्नुपर्छ।
+- यो Workflow ले Release बनाउन GitHub लाई अनुमति दिन्छ। Repository को Settings मा Actions का लागि आवश्यक Write permissions उपलब्ध हुनुपर्छ।
+
+**महत्त्वपूर्ण:** तपाईंको एपको फोटो र ImgBB सुविधा `www/index.html` मा सही रूपमा राखिएको हुनुपर्छ। यो Workflow ले आफैँ फोटोसम्बन्धी समस्या समाधान गर्दैन; त्यसले भएका कोडलाई APK मा Build गर्छ।
