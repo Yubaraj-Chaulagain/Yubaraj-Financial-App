@@ -24,12 +24,12 @@ jobs:
 
       - name: Install Dependencies
         run: npm install
-- name: Setup Java
-  uses: actions/setup-java@v4
-  with:
-    distribution: temurin
-    java-version: 21
-    
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
 
       - name: Check Capacitor Configuration
         run: |
@@ -46,7 +46,8 @@ jobs:
           if [ -f resources/icon.png ]; then
             echo "Photo icon found."
           else
-            echo "WARNING: resources/icon.png not found."
+            echo "ERROR: resources/icon.png not found."
+            exit 1
           fi
 
       - name: Generate Android Launcher Icons
