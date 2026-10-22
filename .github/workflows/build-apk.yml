@@ -35,7 +35,10 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
+
+      - name: Install Dependencies
+        run: npm install
 
       - name: Check Project Files
         run: |
@@ -43,59 +46,30 @@ jobs:
           test -f capacitor.config.json
           test -d www
           test -f www/index.html
+          npx cap --version
 
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Create Android Project If Missing
-        run: |
-          if [ ! -f android/gradlew ]; then
-            npm install @capacitor/android
-            npx cap add android
-          fi
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Sync Capacitor
         run: npx cap sync android
-
-      - name: Configure Internet Permission
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path("android/app/src/main/AndroidManifest.xml")
-
-          if not p.exists():
-              raise SystemExit("AndroidManifest.xml not found")
-
-          content = p.read_text(encoding="utf-8")
-          permission = 'android.permission.INTERNET'
-
-          if permission not in content:
-              match = re.search(r'<manifest\b[^>]*>', content)
-              if not match:
-                  raise SystemExit("Manifest opening tag not found")
-
-              content = (
-                  content[:match.end()]
-                  + '\n    <uses-permission android:name="android.permission.INTERNET" />'
-                  + content[match.end():]
-              )
-
-              p.write_text(content, encoding="utf-8")
-          PY
 
       - name: Make Gradle Executable
         run: chmod +x android/gradlew
 
       - name: Build Android APK
         working-directory: android
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
+          if [ ! -f "$APK" ]; then
+            echo "APK was not generated."
+            exit 1
+          fi
           ls -lh "$APK"
 
       - name: Generate Release Tag
