@@ -14,6 +14,10 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -27,7 +31,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Check Project Files
         run: |
@@ -39,12 +43,34 @@ jobs:
         run: npm install
 
       - name: Configure Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)"
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -f "$SDKMANAGER" ]; then
+            echo "Android SDK manager not found."
+            find "$ANDROID_HOME" -maxdepth 4 -name sdkmanager -type f || true
+            exit 1
+          fi
+
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android SDK Packages
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Create Android Project If Missing
         run: |
@@ -71,6 +97,7 @@ jobs:
 
           if "android.permission.INTERNET" not in content:
               match = re.search(r'<manifest\b[^>]*>', content)
+
               if not match:
                   raise SystemExit("Manifest opening tag not found")
 
@@ -79,6 +106,7 @@ jobs:
                   + '\n    <uses-permission android:name="android.permission.INTERNET" />'
                   + content[match.end():]
               )
+
               p.write_text(content, encoding="utf-8")
           PY
 
@@ -92,7 +120,12 @@ jobs:
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
+
+          if [ ! -f "$APK" ]; then
+            echo "APK was not generated."
+            exit 1
+          fi
+
           ls -lh "$APK"
 
       - name: Generate Release Tag
