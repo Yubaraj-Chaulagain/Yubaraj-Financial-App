@@ -40,7 +40,7 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Check Capacitor Configuration
+      - name: Check Project Files
         run: |
           test -f package.json
           test -f capacitor.config.json
@@ -51,10 +51,7 @@ jobs:
       - name: Create Android Project If Missing
         run: |
           if [ ! -f android/gradlew ]; then
-            echo "Android project missing. Creating Android project..."
             npx cap add android
-          else
-            echo "Android project already exists."
           fi
 
       - name: Sync Capacitor
@@ -71,22 +68,20 @@ jobs:
           if not p.exists():
               raise SystemExit("AndroidManifest.xml not found")
 
-          text = p.read_text(encoding="utf-8")
+          content = p.read_text(encoding="utf-8")
           permission = 'android.permission.INTERNET'
 
-          if permission not in text:
-              match = re.search(r'<manifest\b[^>]*>', text)
+          if permission not in content:
+              match = re.search(r'<manifest\b[^>]*>', content)
               if not match:
                   raise SystemExit("Manifest opening tag not found")
 
-              text = (
-                  text[:match.end()]
+              content = (
+                  content[:match.end()]
                   + '\n    <uses-permission android:name="android.permission.INTERNET" />'
-                  + text[match.end():]
+                  + content[match.end():]
               )
-              p.write_text(text, encoding="utf-8")
-
-          print("Internet permission configured.")
+              p.write_text(content, encoding="utf-8")
           PY
 
       - name: Make Gradle Executable
@@ -99,13 +94,7 @@ jobs:
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK file was not generated."
-            find android/app/build/outputs -type f || true
-            exit 1
-          fi
-
+          test -f "$APK"
           ls -lh "$APK"
 
       - name: Generate Release Tag
@@ -123,8 +112,6 @@ jobs:
 
             Build Number: ${{ github.run_number }}
             Commit: ${{ github.sha }}
-
-            Download app-debug.apk below to install the application.
           files: android/app/build/outputs/apk/debug/app-debug.apk
           fail_on_unmatched_files: true
           make_latest: true
