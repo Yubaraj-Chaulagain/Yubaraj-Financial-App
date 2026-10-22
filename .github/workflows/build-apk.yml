@@ -1,4 +1,4 @@
-name: Build Yubaraj Finance Stock APK
+name: Build Yubaraj Financial App APK
 
 on:
   workflow_dispatch:
@@ -7,141 +7,61 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
-    name: Build Android APK
-    runs-on: ubuntu-22.04
-
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Source
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-
-      - name: Setup Java JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Check Project Files
-        run: |
-          test -f package.json
-          test -f capacitor.config.json
-          test -f www/index.html
+          node-version: 20
+          cache: npm
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Configure Android SDK
+      - name: Prepare App Icon
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -f "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)"
-          fi
-
-          if [ -z "$SDKMANAGER" ] || [ ! -f "$SDKMANAGER" ]; then
-            echo "Android SDK manager not found."
-            find "$ANDROID_HOME" -maxdepth 4 -name sdkmanager -type f || true
+          if [ -f resources/icon.png ]; then
+            echo "App icon found: resources/icon.png"
+          else
+            echo "ERROR: resources/icon.png not found"
             exit 1
           fi
 
-          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-
-      - name: Accept Android SDK Licenses
-        run: |
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-
-      - name: Install Android SDK Packages
-        run: |
-          "$SDKMANAGER" --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Create Android Project If Missing
-        run: |
-          if [ ! -f android/gradlew ]; then
-            npm install @capacitor/android
-            npx cap add android
+          if [ -f www/icon.png ]; then
+            echo "Web icon found: www/icon.png"
           fi
 
-      - name: Sync Capacitor
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Sync Android Project
         run: npx cap sync android
 
-      - name: Configure Internet Permission
+      - name: Generate Android Launcher Icons
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
+          npm install --no-save @capacitor/assets
+          npx capacitor-assets generate --android
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-
-          if not p.exists():
-              raise SystemExit("AndroidManifest.xml not found")
-
-          content = p.read_text(encoding="utf-8")
-
-          if "android.permission.INTERNET" not in content:
-              match = re.search(r'<manifest\b[^>]*>', content)
-
-              if not match:
-                  raise SystemExit("Manifest opening tag not found")
-
-              content = (
-                  content[:match.end()]
-                  + '\n    <uses-permission android:name="android.permission.INTERNET" />'
-                  + content[match.end():]
-              )
-
-              p.write_text(content, encoding="utf-8")
-          PY
-
-      - name: Make Gradle Executable
-        run: chmod +x android/gradlew
-
-      - name: Build Android APK
+      - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Verify APK
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-          if [ ! -f "$APK" ]; then
-            echo "APK was not generated."
-            exit 1
-          fi
-
-          ls -lh "$APK"
-
-      - name: Generate Release Tag
-        id: release_tag
-        run: |
-          echo "tag=apk-$(date -u +'%Y%m%d-%H%M%S')-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
-
-      - name: Publish APK to GitHub Releases
-        uses: softprops/action-gh-release@v2
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.release_tag.outputs.tag }}
-          name: Yubaraj Finance & Stock APK
-          body: |
-            Yubaraj Finance & Stock Android APK
-            Build Number: ${{ github.run_number }}
-            Commit: ${{ github.sha }}
-          files: android/app/build/outputs/apk/debug/app-debug.apk
-          fail_on_unmatched_files: true
-          make_latest: true
+          name: Yubaraj-Financial-App-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
