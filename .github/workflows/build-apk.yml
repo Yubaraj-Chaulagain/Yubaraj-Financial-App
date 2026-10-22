@@ -25,32 +25,37 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Prepare App Icon
-        run: |
-          if [ -f resources/icon.png ]; then
-            echo "App icon found: resources/icon.png"
-          else
-            echo "ERROR: resources/icon.png not found"
-            exit 1
-          fi
-
-          if [ -f www/icon.png ]; then
-            echo "Web icon found: www/icon.png"
-          fi
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Sync Android Project
-        run: npx cap sync android
+      - name: Check Capacitor Configuration
+        run: |
+          test -f package.json || (echo "ERROR: package.json missing" && exit 1)
+          test -f capacitor.config.json || (echo "ERROR: capacitor.config.json missing" && exit 1)
+
+      - name: Add Android Platform
+        run: |
+          npm install @capacitor/android
+          npx cap add android
+
+      - name: Prepare App Icon
+        run: |
+          if [ -f resources/icon.png ]; then
+            echo "Photo icon found."
+          else
+            echo "WARNING: resources/icon.png not found."
+          fi
 
       - name: Generate Android Launcher Icons
         run: |
           npm install --no-save @capacitor/assets
           npx capacitor-assets generate --android
+
+      - name: Sync Android Project
+        run: npx cap sync android
 
       - name: Build Debug APK
         working-directory: android
