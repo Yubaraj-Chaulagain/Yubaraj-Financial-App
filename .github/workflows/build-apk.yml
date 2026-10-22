@@ -48,31 +48,17 @@ jobs:
           npx cap --version
 
       - name: Configure Android SDK
-        run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+        uses: android-actions/setup-android@v3
 
       - name: Install Android SDK Packages
         run: |
-          SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}" -name sdkmanager -type f | head -n 1)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: Android SDK manager not found."
-            exit 1
-          fi
-
-          chmod +x "$SDKMANAGER"
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          sdkmanager --licenses </dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Create Android Project If Missing
         run: |
           if [ ! -f android/gradlew ]; then
+            npm install @capacitor/android
             npx cap add android
           fi
 
@@ -118,12 +104,7 @@ jobs:
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
+          test -f "$APK"
           ls -lh "$APK"
 
       - name: Generate Release Tag
