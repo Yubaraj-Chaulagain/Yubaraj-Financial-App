@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "www/**"
+      - "android/**"
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.*"
+      - ".github/workflows/build-apk.yml"
 
 permissions:
   contents: write
@@ -21,80 +28,99 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
+          cache: npm
 
       - name: Setup Java JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
-
-      - name: Verify Project Files
-        run: |
-          test -f package.json
-          test -f capacitor.config.json
-          test -f resources/icon.png
-          test -f www/index.html
-          echo "Required files found."
+          java-version: "17"
+          cache: gradle
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Validate App Icon
+      - name: Verify Capacitor
         run: |
-          python3 -m pip install --user Pillow
-          python3 - <<'PY'
-          from PIL import Image
-          img = Image.open("resources/icon.png")
-          print("Icon size:", img.size)
-          img.verify()
-          print("Icon is valid.")
-          PY
+          npx cap --version
+          npx cap sync android
 
-      - name: Add Android Platform If Missing
+      - name: Configure Android Download Permissions
         run: |
-          if [ ! -f android/gradlew ]; then
-            npx cap add android
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+
+          if [ -f "$MANIFEST" ]; then
+            echo "AndroidManifest.xml found."
+            grep -q 'android.permission.INTERNET' "$MANIFEST" || \
+              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' "$MANIFEST"
+          else
+            echo "ERROR: AndroidManifest.xml not found."
+            exit 1
           fi
 
-      - name: Generate Android App Icons
+      - name: Make Gradle Executable
         run: |
-          npx capacitor-assets generate --android
+          if [ -f android/gradlew ]; then
+            chmod +x android/gradlew
+          else
+            echo "ERROR: android/gradlew not found."
+            exit 1
+          fi
 
-      - name: Sync Android Project
-        run: npx cap sync android
-
-      - name: Verify Android Project
-        run: |
-          test -f android/gradlew
-          test -f android/app/src/main/AndroidManifest.xml
-
-      - name: Grant Gradle Permission
-        run: chmod +x android/gradlew
-
-      - name: Build Android APK
+      - name: Build Debug APK
         working-directory: android
-        run: ./gradlew --no-daemon clean assembleDebug
+        run: ./gradlew assembleDebug --no-daemon
 
-      - name: Prepare APK
+      - name: Verify APK
         run: |
-          mkdir -p release
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-            release/Yubaraj-Finance-Stock.apk
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            find android/app/build/outputs -type f || true
+            exit 1
+          fi
+
+          ls -lh "$APK"
 
       - name: Generate Release Tag
-        id: release
+        id: release_tag
         run: |
-          echo "tag=finance-stock-${GITHUB_RUN_NUMBER}" \
-            >> "$GITHUB_OUTPUT"
+          echo "tag=apk-$(date -u +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
 
-      - name: Publish APK Release
+      - name: Publish APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release.outputs.tag }}
-          name: Yubaraj Finance & Stock Build ${{ github.run_number }}
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: Yubaraj Finance & Stock APK
           body: |
-            Yubaraj Finance & Stock Android APK.
-            App icon generated from resources/icon.png.
-          files: release/Yubaraj-Finance-Stock.apk
+            Automated Android APK build.
+
+            App: Yubaraj Finance & Stock
+            Build: ${{ github.run_number }}
+            Commit: ${{ github.sha }}
+
+            Download the APK below and install it on your Android device.
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          fail_on_unmatched_files: true
           make_latest: true
+
+### GitHub मा राख्ने तरिका
+
+1. आफ्नो GitHub Repository खोल्नुहोस्।
+2. `.github/workflows/build-apk.yml` फाइल खोल्नुहोस्।
+3. ✏️ **Edit** थिच्नुहोस्।
+4. पुरानो कोड हटाएर माथिको पूरा कोड राख्नुहोस्।
+5. **Commit changes** गर्नुहोस्।
+6. त्यसपछि **Actions** मा गएर Build सफल भयो कि भएन हेर्नुहोस्।
+7. Build सफल भएपछि **Releases** मा APK डाउनलोड गर्नुहोस्।
+
+### महत्त्वपूर्ण जानकारी
+
+- यो कोडले `android/` फोल्डरमा Capacitor Android प्रोजेक्ट र `android/gradlew` फाइल पहिल्यै उपलब्ध भएको मान्छ।
+- यसले APK Build गर्छ र Release मा राख्छ।
+- **यो YAML मात्र परिवर्तन गर्दा Excel Download वा सातवटै Edit सुविधा स्वतः ठीक हुँदैन।** ती सुविधाका लागि सम्बन्धित Android तथा `www/index.html` कोड पनि सही हुनुपर्छ।
+- अहिलेको कोडले Debug APK बनाउँछ। यो Release APK होइन; सामान्य परीक्षण र Install का लागि हो।
+
+यदि GitHub Actions मा त्रुटि देखियो भने त्यसको Screenshot पठाउनुहोस्। म त्रुटिअनुसार कोड सच्याउन मद्दत गर्छु।
