@@ -7,7 +7,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -28,40 +28,30 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Check Project Files
-        run: |
-          test -f package.json || (echo "ERROR: package.json missing" && exit 1)
-          test -f capacitor.config.json || (echo "ERROR: capacitor.config.json missing" && exit 1)
-          test -f resources/icon.png || (echo "ERROR: resources/icon.png missing" && exit 1)
-          test -f www/index.html || (echo "ERROR: www/index.html missing" && exit 1)
-
       - name: Install Dependencies
         run: npm install
 
       - name: Install Capacitor Assets
         run: npm install --no-save @capacitor/assets
 
-      - name: Prepare Android Platform
-        shell: bash
+      - name: Check App Files
+        run: |
+          test -f package.json
+          test -f capacitor.config.json
+          test -f resources/icon.png
+          test -f www/index.html
+
+      - name: Prepare Android
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
 
-      - name: Generate Launcher Icons
+      - name: Generate App Icon
         run: npx capacitor-assets generate --android
 
-      - name: Sync Capacitor
+      - name: Sync Android
         run: npx cap sync android
-
-      - name: Check Launcher Icons
-        run: |
-          echo "Generated Android launcher icons:"
-          find android/app/src/main/res -type f \
-            \( -name 'ic_launcher.png' \
-            -o -name 'ic_launcher_round.png' \
-            -o -name 'ic_launcher_foreground.png' \) \
-            -print
 
       - name: Build APK
         working-directory: android
@@ -69,10 +59,27 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Prepare APK
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+            release/Yubaraj-Financial-App.apk
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Yubaraj-Financial-App-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Yubaraj-Financial-App
+          path: release/Yubaraj-Financial-App.apk
           if-no-files-found: error
-          retention-days: 7
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: Yubaraj Financial App - Latest APK
+          body: Latest APK build of Yubaraj Financial App.
+          files: release/Yubaraj-Financial-App.apk
+          fail_on_unmatched_files: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
