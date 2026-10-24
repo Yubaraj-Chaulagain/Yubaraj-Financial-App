@@ -82,7 +82,18 @@ function changePassword_(p){
 function logout_(p){if(p.token)PropertiesService.getScriptProperties().deleteProperty('SESSION_'+p.token);return json_({ok:true});}
 function adminListRequests_(p){const a=auth_(p.token,true);if(!a.ok)return json_(a);return json_({ok:true,requests:readRows_(getOrCreateSpreadsheet_().getSheetByName('AccountRequests')).filter(r=>r.status==='Pending').map(publicUser_)});}
 function adminReview_(p){const a=auth_(p.token,true);if(!a.ok)return json_(a);const ss=getOrCreateSpreadsheet_(),sh=ss.getSheetByName('AccountRequests'),rows=readRows_(sh),r=rows.find(x=>String(x.id)===String(p.id));if(!r)return json_({ok:false,error:'Request भेटिएन।'});const decision=p.decision==='Approve'?'Approved':'Rejected';r.status=decision;r.reviewedAt=new Date().toISOString();r.reviewedBy=ADMIN_EMAIL;
- if(decision==='Approved'){r.approvedAt=r.reviewedAt;upsertRow_(ss,'Users',r);sendMail_(r.gmail,'Yubaraj Financial App — Account Approved','Hello '+r.name+', your account has been approved. You can now log in.');}else sendMail_(r.gmail,'Yubaraj Financial App — Account Rejected','Hello '+r.name+', your account request was rejected. Contact the administrator if you need help.');upsertRow_(ss,'AccountRequests',r);return json_({ok:true,message:'Account '+decision});}
+ if(decision==='Approved'){
+  r.approvedAt=r.reviewedAt;
+  // Keep the approved login account in Users, and also add it to the app's Members sheet.
+  upsertRow_(ss,'Users',r);
+  const memberSheet=ss.getSheetByName('Members');
+  const existingMember=readRows_(memberSheet).find(m=>String(m.gmail||'').toLowerCase()===String(r.gmail||'').toLowerCase());
+  if(!existingMember){
+   upsertRow_(ss,'Members',{id:r.id,ownerEmail:ADMIN_EMAIL,name:r.name,company:'',trade:r.position||'',gmail:r.gmail,whatsapp:r.whatsapp||'',staff:r.username||'',opening:0,date:r.approvedAt||new Date().toISOString(),photoUrl:''});
+  }
+  sendMail_(r.gmail,'Yubaraj Financial App — Account Approved','Hello '+r.name+', your account has been approved. You can now log in.');
+ }else sendMail_(r.gmail,'Yubaraj Financial App — Account Rejected','Hello '+r.name+', your account request was rejected. Contact the administrator if you need help.');
+ upsertRow_(ss,'AccountRequests',r);return json_({ok:true,message:'Account '+decision+(decision==='Approved'?' and added to Members sheet':'' )});}
 function adminListUsers_(p){const a=auth_(p.token,true);if(!a.ok)return json_(a);return json_({ok:true,users:readRows_(getOrCreateSpreadsheet_().getSheetByName('Users')).map(publicUser_)});}
 function adminSetUser_(p){const a=auth_(p.token,true);if(!a.ok)return json_(a);const ss=getOrCreateSpreadsheet_(),rows=readRows_(ss.getSheetByName('Users')),u=rows.find(x=>String(x.id)===String(p.id));if(!u)return json_({ok:false,error:'User भेटिएन।'});if(u.gmail===ADMIN_EMAIL)return json_({ok:false,error:'Admin account परिवर्तन गर्न मिल्दैन।'});if(p.status==='Delete'){deleteById_(ss.getSheetByName('Users'),u.id);sendMail_(u.gmail,'Yubaraj Financial App — Account Deleted','Your account was deleted by the administrator.');}else{u.status=['Approved','Blocked','Rejected'].includes(p.status)?p.status:'Blocked';upsertRow_(ss,'Users',u);sendMail_(u.gmail,'Yubaraj Financial App — Account Status','Your account status is now: '+u.status);}return json_({ok:true});}
 function syncData_(p){const a=auth_(p.token,false);if(!a.ok)return json_(a);const ss=getOrCreateSpreadsheet_(),data=p.data||{},owner=a.email;const lock=LockService.getScriptLock();lock.waitLock(25000);const activity=[];
