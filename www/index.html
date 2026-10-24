@@ -26,7 +26,7 @@
 <footer class="hint">Keep regular backups. Apps Script Web App URL is built into this app.</footer></div>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-const APPS_SCRIPT_URL='https://script.google.com/macros/s/AKfycbysIozXdzhbS9flOSpUGe03mLq7f9b38mNS-BpGn6vxLHg5CGUFNOtnVi7g6cMbAFHwbg/exec';
+const APPS_SCRIPT_URL='https://script.google.com/macros/s/AKfycbzSvfyjQ-hEjjnhFBRtrcIv8K8yddrywiBmj4yrYwi4vzPmC3tTeMTc6N2QfF_6zglmTQ/exec';
 const DBKEY='yfs_db_v1';
 const emptyDB=()=>({members:[],products:[],tx:[],savings:[],loans:[],payments:[],transfers:[],receipts:[],settings:{scriptUrl:APPS_SCRIPT_URL,imgbbKey:''},syncQueue:[]});
 let db;try{db=Object.assign(emptyDB(),JSON.parse(localStorage.getItem(DBKEY)||'{}'))}catch(e){db=emptyDB()}
