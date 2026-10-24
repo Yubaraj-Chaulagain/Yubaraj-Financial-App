@@ -23,6 +23,9 @@ function doPost(e){
   if(p.action==='health')return json_({ok:true,app:APP_NAME});
   if(p.action==='signup')return signup_(p);
   if(p.action==='login')return login_(p);
+  if(p.action==='forgotPassword')return forgotPassword_(p);
+  if(p.action==='resetPassword')return resetPassword_(p);
+  if(p.action==='changePassword')return changePassword_(p);
   if(p.action==='logout')return logout_(p);
   if(p.action==='adminListRequests')return adminListRequests_(p);
   if(p.action==='adminReview')return adminReview_(p);
@@ -50,6 +53,32 @@ function login_(p){const username=clean_(p.username,40).toLowerCase(),password=S
  const token=Utilities.getUuid()+'-'+Utilities.getUuid(),exp=Date.now()+1000*60*60*24*14;PropertiesService.getScriptProperties().setProperty('SESSION_'+token,JSON.stringify({email:u.gmail,username:u.username,role:u.gmail===ADMIN_EMAIL?'Admin':'Member',exp}));u.lastLogin=new Date().toISOString();upsertRow_(ss,'Users',u);
  return json_({ok:true,token,user:{name:u.name,position:u.position,gmail:u.gmail,whatsapp:u.whatsapp,username:u.username,role:u.gmail===ADMIN_EMAIL?'Admin':'Member'},message:'Login सफल भयो।'});
 }
+
+function forgotPassword_(p){
+ const username=clean_(p.username,40).toLowerCase(),gmail=clean_(p.gmail,180).toLowerCase();
+ if(!username||!validEmail_(gmail))return json_({ok:false,error:'Username र Gmail सही लेख्नुहोस्।'});
+ const ss=getOrCreateSpreadsheet_(),u=readRows_(ss.getSheetByName('Users')).find(x=>String(x.username||'').toLowerCase()===username&&String(x.gmail||'').toLowerCase()===gmail&&x.status==='Approved');
+ if(!u)return json_({ok:false,error:'Approved account सँग Username/Gmail मिलेन।'});
+ const code=String(Math.floor(100000+Math.random()*900000)),key='RESET_'+username;
+ PropertiesService.getScriptProperties().setProperty(key,JSON.stringify({code,gmail,exp:Date.now()+10*60*1000,tries:0}));
+ sendMail_(gmail,APP_NAME+' — Password Reset Code','Your password reset verification code is: '+code+'\nThis code expires in 10 minutes. If you did not request this, ignore this email.');
+ return json_({ok:true,message:'Verification code तपाईंको Gmail मा पठाइयो। 10 मिनेटभित्र प्रयोग गर्नुहोस्।'});
+}
+function resetPassword_(p){
+ const username=clean_(p.username,40).toLowerCase(),gmail=clean_(p.gmail,180).toLowerCase(),code=clean_(p.code,10),password=String(p.password||'');
+ if(password.length<6)return json_({ok:false,error:'नयाँ Password कम्तीमा 6 अक्षर हुनुपर्छ।'});
+ const key='RESET_'+username,props=PropertiesService.getScriptProperties(),raw=props.getProperty(key);if(!raw)return json_({ok:false,error:'Code छैन वा म्याद सकियो। फेरि code माग्नुहोस्।'});
+ let v;try{v=JSON.parse(raw)}catch(e){props.deleteProperty(key);return json_({ok:false,error:'Reset code invalid छ।'});}
+ if(v.exp<Date.now()||v.gmail!==gmail){props.deleteProperty(key);return json_({ok:false,error:'Code को म्याद सकियो वा Gmail मिलेन।'});}
+ if(v.code!==code){v.tries=(v.tries||0)+1;if(v.tries>=5)props.deleteProperty(key);else props.setProperty(key,JSON.stringify(v));return json_({ok:false,error:'Verification code मिलेन।'});}
+ const ss=getOrCreateSpreadsheet_(),u=readRows_(ss.getSheetByName('Users')).find(x=>String(x.username||'').toLowerCase()===username&&String(x.gmail||'').toLowerCase()===gmail&&x.status==='Approved');if(!u)return json_({ok:false,error:'Account भेटिएन।'});
+ u.password=password;upsertRow_(ss,'Users',u);props.deleteProperty(key);sendMail_(gmail,APP_NAME+' — Password Changed','Your account password has been reset successfully.');return json_({ok:true,message:'Password सफलतापूर्वक reset भयो। अब Login गर्नुहोस्।'});
+}
+function changePassword_(p){
+ const a=auth_(p.token,false);if(!a.ok)return json_(a);const old=String(p.oldPassword||''),password=String(p.newPassword||'');if(password.length<6)return json_({ok:false,error:'नयाँ Password कम्तीमा 6 अक्षर हुनुपर्छ।'});
+ const ss=getOrCreateSpreadsheet_(),u=readRows_(ss.getSheetByName('Users')).find(x=>String(x.gmail||'').toLowerCase()===a.email.toLowerCase());if(!u||String(u.password)!==old)return json_({ok:false,error:'हालको Password मिलेन।'});if(old===password)return json_({ok:false,error:'नयाँ Password पुरानोभन्दा फरक राख्नुहोस्।'});u.password=password;upsertRow_(ss,'Users',u);sendMail_(u.gmail,APP_NAME+' — Password Changed','Your account password was changed successfully.');return json_({ok:true,message:'Password परिवर्तन भयो।'});
+}
+
 function logout_(p){if(p.token)PropertiesService.getScriptProperties().deleteProperty('SESSION_'+p.token);return json_({ok:true});}
 function adminListRequests_(p){const a=auth_(p.token,true);if(!a.ok)return json_(a);return json_({ok:true,requests:readRows_(getOrCreateSpreadsheet_().getSheetByName('AccountRequests')).filter(r=>r.status==='Pending').map(publicUser_)});}
 function adminReview_(p){const a=auth_(p.token,true);if(!a.ok)return json_(a);const ss=getOrCreateSpreadsheet_(),sh=ss.getSheetByName('AccountRequests'),rows=readRows_(sh),r=rows.find(x=>String(x.id)===String(p.id));if(!r)return json_({ok:false,error:'Request भेटिएन।'});const decision=p.decision==='Approve'?'Approved':'Rejected';r.status=decision;r.reviewedAt=new Date().toISOString();r.reviewedBy=ADMIN_EMAIL;
