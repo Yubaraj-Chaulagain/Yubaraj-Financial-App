@@ -15,7 +15,7 @@ const DATA_SHEETS={
  LoanPayments:{key:'payments',label:'Loan Payment',memberField:'loanId',notifyAdmin:true,notifyMemberOnAdd:true,notifyMemberOnChange:true},
  Transfers:{key:'transfers',label:'Transfer',memberField:'from',notifyAdmin:true,notifyMemberOnAdd:false,notifyMemberOnChange:false}
 };
-const HEADERS={Users:['id','name','position','gmail','whatsapp','username','password','status','createdAt','approvedAt','lastLogin'],AccountRequests:['id','name','position','gmail','whatsapp','username','password','status','createdAt','reviewedAt','reviewedBy'],Members:['id','ownerEmail','name','company','trade','gmail','whatsapp','staff','opening','date','photoUrl'],Products:['id','ownerEmail','name','desc','qty','buyRate','saleRate'],Transactions:['id','ownerEmail','kind','date','memberId','customerName','productId','productName','qty','rate','total','received','staff','payment'],Savings:['id','ownerEmail','date','memberId','kind','amount','staff','remarks'],Loans:['id','ownerEmail','memberId','date','principal','rate','method','freq','periods','staff'],LoanPayments:['id','ownerEmail','loanId','date','principal','interest','fee','total','staff'],Transfers:['id','ownerEmail','from','to','date','amount','staff','remarks'],ActivityLogs:['id','ownerEmail','time','action','entity','recordId','details'],NotificationLogs:['id','time','status','subject','recipient','details'],Meta:['id','syncedAt','app']};
+const HEADERS={Users:['id','name','position','gmail','whatsapp','username','password','status','createdAt','approvedAt','lastLogin'],AccountRequests:['id','name','position','gmail','whatsapp','username','password','status','createdAt','reviewedAt','reviewedBy'],Members:['id','ownerEmail','name','company','trade','gmail','whatsapp','staff','opening','date','photoUrl'],Products:['id','ownerEmail','name','desc','qty','buyRate','saleRate'],Transactions:['id','ownerEmail','kind','date','memberId','customerName','productId','productName','qty','rate','total','received','staff','payment'],Savings:['id','ownerEmail','date','memberId','savingsType','kind','amount','staff','remarks'],Loans:['id','ownerEmail','memberId','date','principal','rate','method','freq','periods','staff','status','requestBy','managerStatus','adminStatus','disbursementStatus','approvedAt','disbursedAt','gmailSentAt'],LoanPayments:['id','ownerEmail','loanId','date','principal','interest','fee','total','staff','paymentSource'],LoanRequests:['id','ownerEmail','memberId','date','principal','rate','method','freq','periods','purpose','status','requestedBy','managerStatus','managerBy','managerAt','adminStatus','adminBy','adminAt','createdAt'],LoanSchedule:['id','ownerEmail','loanId','memberId','installmentNo','dueDate','principal','interest','total','balance','pdfStatus','emailStatus'],LoanApprovals:['id','ownerEmail','loanId','memberId','stage','decision','byEmail','at','remarks'],Transfers:['id','ownerEmail','from','to','date','amount','staff','remarks'],ActivityLogs:['id','ownerEmail','time','action','entity','recordId','details'],NotificationLogs:['id','time','status','subject','recipient','details'],Meta:['id','syncedAt','app']};
 function doGet(){return json_({ok:true,app:APP_NAME,message:'Apps Script endpoint ready'});}
 function doPost(e){
  let p={};try{p=JSON.parse(e&&e.postData&&e.postData.contents||'{}');}catch(err){return json_({ok:false,error:'Invalid JSON'});}
@@ -31,42 +31,11 @@ function doPost(e){
   if(p.action==='adminReview')return adminReview_(p);
   if(p.action==='adminListUsers')return adminListUsers_(p);
   if(p.action==='adminSetUser')return adminSetUser_(p);
-  if(p.action==='mutateRecord')return mutateRecord_(p);
   if(p.action==='sync')return syncData_(p);
   if(p.action==='loadData')return loadData_(p);
   return json_({ok:false,error:'Unknown action'});
  }catch(err){try{logNotification_('ERROR','Backend error','',String(err));}catch(_){}return json_({ok:false,error:String(err)});}
 }
-
-function mutateRecord_(p){
- const a=auth_(p.token,false); if(!a.ok)return json_(a);
- const map={members:'Members',products:'Products',tx:'Transactions',savings:'Savings',loans:'Loans',payments:'LoanPayments',transfers:'Transfers'};
- const sheetName=map[String(p.key||'')]; if(!sheetName)return json_({ok:false,error:'Unknown record type'});
- const action=String(p.operation||'').toLowerCase(); if(!['upsert','delete'].includes(action))return json_({ok:false,error:'Unknown mutation'});
- const id=String(p.id||p.record&&p.record.id||'').trim(); if(!id)return json_({ok:false,error:'Record ID required'});
- const ss=getOrCreateSpreadsheet_(),sh=ss.getSheetByName(sheetName),lock=LockService.getScriptLock();
- lock.waitLock(20000);
- try {
-   const rows=readRows_(sh),old=rows.find(r=>String(r.id)===id),isAdmin=a.role==='Admin';
-   if(old && String(old.ownerEmail||'').trim() && String(old.ownerEmail).toLowerCase()!==a.email.toLowerCase() && !isAdmin)
-     return json_({ok:false,error:'Permission denied for this record'});
-   if(action==='delete'){
-     if(!old)return json_({ok:true,operation:'delete',id,changed:false,message:'Record already absent'});
-     if(!isAdmin && String(old.ownerEmail||'').trim() && String(old.ownerEmail).toLowerCase()!==a.email.toLowerCase())
-       return json_({ok:false,error:'Cannot delete a record owned by another account'});
-     deleteById_(sh,id);
-     return json_({ok:true,operation:'delete',id,changed:true});
-   }
-   const rec=p.record;
-   if(!rec || String(rec.id)!==id)return json_({ok:false,error:'Record payload/ID mismatch'});
-   const clean=Object.assign({},rec);
-   // Keep an existing record's owner; new records belong to the current account.
-   clean.ownerEmail=old&&old.ownerEmail?old.ownerEmail:a.email;
-   upsertRow_(ss,sheetName,clean);
-   return json_({ok:true,operation:old?'update':'add',id,changed:true});
- } finally {lock.releaseLock();}
-}
-
 function setupInitialAdmin(){const ss=getOrCreateSpreadsheet_(),rows=readRows_(ss.getSheetByName('Users'));if(rows.some(u=>String(u.gmail).toLowerCase()===ADMIN_EMAIL.toLowerCase()))throw new Error('Admin already exists; setup stopped.');upsertRow_(ss,'Users',{id:Utilities.getUuid(),name:'Yubaraj Admin',position:'Super Admin',gmail:ADMIN_EMAIL,whatsapp:'',username:'admin',password:ADMIN_INITIAL_PASSWORD,status:'Approved',createdAt:new Date().toISOString(),approvedAt:new Date().toISOString(),lastLogin:''});Logger.log('Admin created. Login username: admin. Change ADMIN_INITIAL_PASSWORD in script and run only once.');}
 function signup_(p){
  const name=clean_(p.name,100),position=clean_(p.position,80),gmail=clean_(p.gmail,180).toLowerCase(),whatsapp=clean_(p.whatsapp,40),username=clean_(p.username,40),password=String(p.password||'');
