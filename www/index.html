@@ -32,11 +32,40 @@ const emptyDB=()=>({members:[],products:[],tx:[],savings:[],loans:[],payments:[]
 // Online-only: business records are loaded from Google Sheets; do not restore a local business-data database.
 let db=emptyDB(); db.settings.scriptUrl=APPS_SCRIPT_URL;
 let suppressAutoSync=false, autoSyncTimer=null, autoSyncBusy=false, autoSyncAgain=false;
+const DATA_KEYS=['members','products','tx','savings','loans','payments','transfers'];
+let serverBaseline={members:[],products:[],tx:[],savings:[],loans:[],payments:[],transfers:[]};
+let mutationQueue=Promise.resolve();
+function cloneData(v){return JSON.parse(JSON.stringify(v||[]));}
+function recordEqual(a,b){return JSON.stringify(a,Object.keys(a||{}).sort())===JSON.stringify(b,Object.keys(b||{}).sort());}
 function persist(){
-  // Do not store financial records in localStorage. Each mutation schedules a server sync.
   if(suppressAutoSync || !authState?.token) return;
   clearTimeout(autoSyncTimer);
-  autoSyncTimer=setTimeout(()=>syncOnline({silent:true}),250);
+  setStatus('Өपरिवर्तन Google Sheets मा तुरुन्तै Save हुँदैछ…');
+  autoSyncTimer=setTimeout(()=>{mutationQueue=mutationQueue.then(()=>syncChangedRecords()).catch(e=>{setStatus('Google Sheets Save असफल: '+e.message);});},0);
+}
+async function syncChangedRecords(){
+  if(!authState?.token)throw new Error('पहिले Login गर्नुहोस्।');
+  if(!navigator.onLine)throw new Error('Internet छैन; परिवर्तन Google Sheets मा Save भएन।');
+  for(const key of DATA_KEYS){
+    const oldRows=serverBaseline[key]||[],newRows=db[key]||[];
+    const oldMap=new Map(oldRows.map(r=>[String(r.id),r])),newMap=new Map(newRows.map(r=>[String(r.id),r]));
+    for(const [id,old] of oldMap){
+      if(!newMap.has(id)){
+        await authCall('mutateRecord',{token:authState.token,key,operation:'delete',id});
+        serverBaseline[key]=serverBaseline[key].filter(r=>String(r.id)!==id);
+      }
+    }
+    for(const [id,rec] of newMap){
+      const old=oldMap.get(id);
+      if(!old || JSON.stringify(old)!==JSON.stringify(rec)){
+        await authCall('mutateRecord',{token:authState.token,key,operation:'upsert',id,record:rec});
+        const list=serverBaseline[key]||(serverBaseline[key]=[]),idx=list.findIndex(r=>String(r.id)===id);
+        if(idx<0)list.push(cloneData([rec])[0]);else list[idx]=cloneData([rec])[0];
+      }
+    }
+  }
+  setStatus('Google Sheets मा सबै परिवर्तन सफलतापूर्वक Save भयो।');
+  return true;
 }
 function uid(prefix){return prefix+'-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,6).toUpperCase()}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -84,7 +113,7 @@ function editRecord(key,id){
  if(key==='loans'){const paid=db.payments.filter(p=>p.loanId===id).reduce((a,p)=>a+p.principal,0);if(updated.principal<paid){alert('Loan principal cannot be less than principal already paid.');return}updated.estimatedInterest=updated.method==='flat'?updated.principal*(updated.rate/100)*(updated.freq==='monthly'?1/12:updated.freq==='weekly'?1/52:1/365)*updated.periods:0;const r=updated.rate/100*(updated.freq==='monthly'?1/12:updated.freq==='weekly'?1/52:1/365);updated.estimatedInstallment=updated.method==='flat'?(updated.principal+updated.estimatedInterest)/updated.periods:(r===0?updated.principal/updated.periods:updated.principal*r/(1-Math.pow(1+r,-updated.periods)));}
  if(key==='payments'){const loan=db.loans.find(l=>l.id===updated.loanId);if(!loan){alert('Loan not found.');return}const paidOther=db.payments.filter(p=>p.id!==id&&p.loanId===updated.loanId).reduce((a,p)=>a+p.principal,0);if(Number(updated.principal)>loan.principal-paidOther){alert('Principal payment exceeds remaining loan principal.');return}updated.total=(+updated.principal||0)+(+updated.interest||0)+(+updated.fee||0)}
  if(key==='transfers'&&updated.from===updated.to){alert('From and To members must be different.');return}
- const index=db[key].findIndex(x=>x.id===id);if(index<0)return;db[key][index]=updated;try{persist()}catch(err){db[key][index]=row;alert('Could not save changes: '+err.message);return}document.getElementById('editModal')?.remove();render();setStatus('Record updated successfully.');
+ const index=db[key].findIndex(x=>x.id===id);if(index<0)return;db[key][index]=updated;try{persist()}catch(err){db[key][index]=row;alert('Could not save changes: '+err.message);return}document.getElementById('editModal')?.remove();render();setStatus('Update Google Sheets मा Save हुँदैछ…');
  };
 }
 function del(key,id){if(!confirm('Delete this record? Related financial history may remain.'))return;db[key]=db[key].filter(x=>x.id!==id);persist();render()}
@@ -161,7 +190,7 @@ function excel(key){
 function downloadBlobFile(name,blob,type){saveReportFile(name,blob,type||blob.type)}
 function jsonReport(key){const data=exportRows(key);if(!data)return;download(key+'-report-'+today()+'.json',JSON.stringify(data.arr,null,2),'application/json;charset=utf-8')}
 
-function saveUrl(){db.settings.scriptUrl=APPS_SCRIPT_URL;db.settings.imgbbKey=(document.getElementById('imgbbKey')?.value||db.settings.imgbbKey||'').trim();persist();setStatus('Apps Script URL built in. ImgBB settings saved locally.')}
+function saveUrl(){db.settings.scriptUrl=APPS_SCRIPT_URL;db.settings.imgbbKey=(document.getElementById('imgbbKey')?.value||db.settings.imgbbKey||'').trim();persist();setStatus('Settings change Google Sheets मा Save हुँदैछ…')}
 async function loadFromGoogleSheets(showMessage=true){
  if(!authState?.token){if(showMessage)setStatus('Google Sheets बाट Data लिन पहिले Login गर्नुहोस्।');return false;}
  if(!navigator.onLine){if(showMessage)setStatus('Internet छैन। Online system मा Data load गर्न सकिएन।');return false;}
@@ -176,6 +205,7 @@ async function loadFromGoogleSheets(showMessage=true){
   db.loans=Array.isArray(r.data.loans)?r.data.loans:[];
   db.payments=Array.isArray(r.data.payments)?r.data.payments:[];
   db.transfers=Array.isArray(r.data.transfers)?r.data.transfers:[];
+  serverBaseline={members:cloneData(db.members),products:cloneData(db.products),tx:cloneData(db.tx),savings:cloneData(db.savings),loans:cloneData(db.loans),payments:cloneData(db.payments),transfers:cloneData(db.transfers)};
   suppressAutoSync=false;
   if(showMessage)setStatus('Google Sheets बाट Data Loaded: Members '+db.members.length+', Products '+db.products.length+', Buy/Sell '+db.tx.length+', Savings '+db.savings.length+', Loans '+db.loans.length+', Payments '+db.payments.length+', Transfers '+db.transfers.length);
   render();return true;
@@ -184,21 +214,9 @@ async function loadFromGoogleSheets(showMessage=true){
 async function syncOnline(options={}){
  const silent=!!options.silent;
  if(!authState?.token){if(!silent)setStatus('Google Sheets मा Save गर्न पहिले Login गर्नुहोस्।');return false;}
- if(!navigator.onLine){if(!silent)setStatus('Internet छैन। Save/Update/Delete गरिएको छैन; फेरि internet आएपछि प्रयास गर्नुहोस्।');return false;}
- if(autoSyncBusy){autoSyncAgain=true;return false;}
- autoSyncBusy=true;
- try{
-  const payload={action:'sync',token:authState.token,app:'Yubaraj Finance & Stock',version:2,data:db};
-  const res=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
-  const txt=await res.text();let data;try{data=JSON.parse(txt)}catch(_){throw new Error('Server response पढ्न सकिएन: '+txt.slice(0,160));}
-  const box=document.getElementById('syncResult');if(box)box.textContent='Server response: '+txt;
-  if(!res.ok||!data.ok)throw new Error(data.error||'Google Sheets sync असफल भयो');
-  setStatus('Google Sheets sync सफल भयो। Changes: '+(data.changes??0));
-  autoSyncBusy=false;
-  if(autoSyncAgain){autoSyncAgain=false;return await syncOnline({silent:true});}
-  return true;
- }catch(e){setStatus('Google Sheets sync असफल: '+e.message);const box=document.getElementById('syncResult');if(box)box.textContent='Sync error: '+e.message;return false;}
- finally{autoSyncBusy=false;}
+ if(!navigator.onLine){if(!silent)setStatus('Internet छैन; Google Sheets मा Save भएन।');return false;}
+ try { return await syncChangedRecords(); }
+ catch(e){setStatus('Google Sheets Save असफल: '+e.message);const box=document.getElementById('syncResult');if(box)box.textContent='Save error: '+e.message;return false;}
 }
 
 const AUTHKEY='yfs_auth_v1';let authState=null,authMode='login';
@@ -222,7 +240,7 @@ if(navigator.onLine)setTimeout(uploadPendingPhotos,1200);
 // Refresh shared server data when the app opens/returns to foreground; poll every 60 seconds while signed in.
 window.addEventListener('focus',()=>{if(authState?.token)loadFromGoogleSheets(false)});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&authState?.token)loadFromGoogleSheets(false)});
-setInterval(()=>{if(authState?.token&&navigator.onLine&&!document.hidden)loadFromGoogleSheets(false)},60000);
+setInterval(()=>{if(authState?.token&&navigator.onLine&&!document.hidden)loadFromGoogleSheets(false)},120000);
 
 if('serviceWorker' in navigator && location.protocol!=='file:')navigator.serviceWorker.register('service-worker.js').catch(()=>{});
 </script></body></html>
